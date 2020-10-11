@@ -88,12 +88,15 @@ class RotaryEncoder {
     }
 };
 
-#define OUTER_A_PIN 2
-#define OUTER_B_PIN 3
+#define SWAP_PIN 2
+#define INNER_B_PIN 3
 #define INNER_A_PIN 4
-#define INNER_B_PIN 5
-#define ACTIVE_CLK_PIN 6
-#define ACTIVE_DIO_PIN 7
+#define OUTER_A_PIN 5
+#define OUTER_B_PIN 6
+#define STANDBY_CLK_PIN 9
+#define STANDBY_DIO_PIN 10
+#define ACTIVE_CLK_PIN 11
+#define ACTIVE_DIO_PIN 12
 
 int prefix = 122;
 int postfix = 800;
@@ -132,7 +135,8 @@ void incrementInner() {
 
 RotaryEncoder outer(OUTER_A_PIN, OUTER_B_PIN, incrementOuter, decrementOuter);
 RotaryEncoder inner(INNER_A_PIN, INNER_B_PIN, incrementInner, decrementInner);
-TM1637_6D primary(ACTIVE_CLK_PIN, ACTIVE_DIO_PIN);
+TM1637_6D active(ACTIVE_CLK_PIN, ACTIVE_DIO_PIN);
+TM1637_6D standby(STANDBY_CLK_PIN, STANDBY_DIO_PIN);
 
 void interruptOuterA() {
   outer.interruptA();
@@ -150,14 +154,32 @@ void interruptInnerB() {
   inner.interruptB();
 }
 
+void interruptSwap() {
+  delay(1);
+  if(digitalRead(SWAP_PIN)) {
+    Serial.write("cmd=Swap\n");
+  }
+}
+
+bool handled = true;
+int lastThreeBytes[4] = {0, 0, 0, 0};
+int8_t loading[6] = {11 , 11, 11, 11, 11, 11};
+int8_t ListDispPoint[6] = {POINT_OFF, POINT_OFF, POINT_OFF, POINT_ON, POINT_OFF, POINT_OFF};
+
 void setup()
 {
   Serial.begin(9600);
+  Serial.setTimeout(10);
+  pinMode(SWAP_PIN, OUTPUT);
+  digitalWrite(13, LOW);
   
   // init display
-  primary.init();
-  primary.set(3);
-  updatePrimary();
+  active.init();
+  active.set(1);
+  active.display(loading, ListDispPoint);
+  standby.init();
+  standby.set(2);
+  standby.display(loading, ListDispPoint);
 
   // init rotary
   inner.init();
@@ -166,29 +188,50 @@ void setup()
   enableInterrupt(OUTER_B_PIN, interruptOuterB, CHANGE);
   enableInterrupt(INNER_A_PIN, interruptInnerA, CHANGE);
   enableInterrupt(INNER_B_PIN, interruptInnerB, CHANGE);
-}
 
-//int8_t frequency[6] = {0, 0, 8, 2, 2, 1};
-int8_t ListDispPoint[6] = {POINT_OFF, POINT_OFF, POINT_OFF, POINT_ON, POINT_OFF, POINT_OFF};
-
-void updatePrimary() {
-  int8_t final_freq[6];
-  final_freq[5] = prefix / 100;
-  final_freq[4] = prefix % 100 / 10;
-  final_freq[3] = prefix % 10;
-  final_freq[2] = postfix / 100;
-  final_freq[1] = postfix % 100 / 10;
-  final_freq[0] = postfix % 10;
-  primary.display(final_freq, ListDispPoint);
-  lastPrefix = prefix;
-  lastPostfix = postfix;
+  // init button
+  pinMode(SWAP_PIN, INPUT);
+  digitalWrite(SWAP_PIN, HIGH);
+  enableInterrupt(SWAP_PIN, interruptSwap, CHANGE);
 }
 
 void loop()
 {
-  delay(10);
+  int numBytes = Serial.available();
+  for (int n = 0; n < numBytes; n++) {
+    handled = false;
+    lastThreeBytes[0] = lastThreeBytes[1];
+    lastThreeBytes[1] = lastThreeBytes[2];
+    lastThreeBytes[2] = lastThreeBytes[3];
+    lastThreeBytes[3] = Serial.read();
+  }
 
-  if(prefix != lastPrefix || postfix != lastPostfix) {
-    updatePrimary();
+  if (!handled) {
+    if(lastThreeBytes[0] == 255) {
+      // We've found the magic byte - let's assume this is a valid frequency
+
+      bool isActive = lastThreeBytes[1] & B1 > 0;
+      int offsetPrefix = lastThreeBytes[2] >> 2;
+      int prefix = offsetPrefix + 100;
+      int extra = lastThreeBytes[2] & B11;
+      int suffix = (extra << 8) | lastThreeBytes[3];
+      
+      int8_t frequency[6] = {0, 0, 0, 0, 0, 0};
+      frequency[5] = prefix / 100;
+      frequency[4] = prefix % 100 / 10;
+      frequency[3] = prefix % 10;
+      frequency[2] = suffix / 100;
+      frequency[1] = suffix % 100 / 10;
+      frequency[0] = suffix % 10;
+
+      if (isActive) {
+        active.display(frequency, ListDispPoint);
+      }
+      else {
+        standby.display(frequency, ListDispPoint);
+      }
+
+      handled = true;
+    }
   }
 }
