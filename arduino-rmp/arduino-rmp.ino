@@ -148,18 +148,15 @@ void setup()
 {
   Serial.begin(9600);
   Serial.setTimeout(10);
-  Serial.write("reset\n");
 
   pinMode(SWAP_PIN, OUTPUT);
   digitalWrite(13, LOW);
 
   // init display
   active.init();
-  active.set(7);
-  active.display(loading, ListDispPoint);
+  active.clearDisplay();
   standby.init();
-  standby.set(7);
-  standby.display(loading, ListDispPoint);
+  standby.clearDisplay();
 
   // init rotary
   inner.init();
@@ -173,6 +170,8 @@ void setup()
   pinMode(SWAP_PIN, INPUT);
   digitalWrite(SWAP_PIN, HIGH);
   enableInterrupt(SWAP_PIN, interruptSwap, CHANGE);
+
+  Serial.write("reset\n");
 }
 
 void loop()
