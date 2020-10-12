@@ -22,5 +22,5 @@ The project consists of:
 ### Installation
 
 ```
-$ pip install pyserial pyxpudpserver
+$ pip install click pyxpudpserver pyserial
 ```

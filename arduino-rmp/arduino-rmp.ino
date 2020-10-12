@@ -1,28 +1,3 @@
-/*
-   Example for 6-digit TM1637 based segment Display
-   The number of milliseconds after start will be displayed on the 6-digit screen
-
-   The MIT License (MIT)
-
-   Permission is hereby granted, free of charge, to any person obtaining a copy
-   of this software and associated documentation files (the "Software"), to deal
-   in the Software without restriction, including without limitation the rights
-   to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-   copies of the Software, and to permit persons to whom the Software is
-   furnished to do so, subject to the following conditions:
-
-   The above copyright notice and this permission notice shall be included in
-   all copies or substantial portions of the Software.
-
-   THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-   IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-   FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-   AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-   LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-   OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
-   THE SOFTWARE.
-*/
-
 #include "TM1637_6D.h"
 #include "EnableInterrupt.h"
 
@@ -60,13 +35,13 @@ class RotaryEncoder {
       if(!stable) {
         if(aSet == bSet) {
           // we're the second interrupt - so A lead
-          decrement();          
+          decrement();
           stable = true;
         }
       }
     }
 
-    void interruptB() {    
+    void interruptB() {
       delay(5);
       aSet = digitalRead(pinA);
       bSet = digitalRead(pinB);
@@ -76,7 +51,7 @@ class RotaryEncoder {
       if(!stable) {
         if(aSet == bSet) {
           // we're the second interrupt - so A lead
-          increment();          
+          increment();
           stable = true;
         }
       }
@@ -130,7 +105,7 @@ void incrementInner() {
   if (postfix >= 1000) {
     postfix = 0;
   }*/
-  Serial.write("cmd=InnerUp\n");  
+  Serial.write("cmd=InnerUp\n");
 }
 
 RotaryEncoder outer(OUTER_A_PIN, OUTER_B_PIN, incrementOuter, decrementOuter);
@@ -162,28 +137,33 @@ void interruptSwap() {
 }
 
 bool handled = true;
-int lastThreeBytes[4] = {0, 0, 0, 0};
+int messageBuffer[4] = {0, 0, 0, 0};
+int8_t activeFreq[6];
+int8_t standbyFreq[6];
 int8_t loading[6] = {11 , 11, 11, 11, 11, 11};
 int8_t ListDispPoint[6] = {POINT_OFF, POINT_OFF, POINT_OFF, POINT_ON, POINT_OFF, POINT_OFF};
+bool powered = false;
 
 void setup()
 {
   Serial.begin(9600);
   Serial.setTimeout(10);
+  Serial.write("reset\n");
+
   pinMode(SWAP_PIN, OUTPUT);
   digitalWrite(13, LOW);
-  
+
   // init display
   active.init();
-  active.set(1);
+  active.set(7);
   active.display(loading, ListDispPoint);
   standby.init();
-  standby.set(2);
+  standby.set(7);
   standby.display(loading, ListDispPoint);
 
   // init rotary
   inner.init();
-  outer.init();  
+  outer.init();
   enableInterrupt(OUTER_A_PIN, interruptOuterA, CHANGE);
   enableInterrupt(OUTER_B_PIN, interruptOuterB, CHANGE);
   enableInterrupt(INNER_A_PIN, interruptInnerA, CHANGE);
@@ -200,35 +180,85 @@ void loop()
   int numBytes = Serial.available();
   for (int n = 0; n < numBytes; n++) {
     handled = false;
-    lastThreeBytes[0] = lastThreeBytes[1];
-    lastThreeBytes[1] = lastThreeBytes[2];
-    lastThreeBytes[2] = lastThreeBytes[3];
-    lastThreeBytes[3] = Serial.read();
+    messageBuffer[0] = messageBuffer[1];
+    messageBuffer[1] = messageBuffer[2];
+    messageBuffer[2] = messageBuffer[3];
+    messageBuffer[3] = Serial.read();
+
+    if(messageBuffer[0] == 255) {
+      break;
+    }
   }
 
   if (!handled) {
-    if(lastThreeBytes[0] == 255) {
+    if(messageBuffer[0] == 255) {
       // We've found the magic byte - let's assume this is a valid frequency
+      int cmd = messageBuffer[1];
+      switch(cmd) {
+        case 0:
+        case 1:
+        {
+          int offsetPrefix = messageBuffer[2] >> 2;
+          int prefix;
+          if(offsetPrefix == 0) {
+            // test mode
+            prefix = 888;
+          }
+          else {
+            prefix = offsetPrefix + 100;
+          }
+          int extra = messageBuffer[2] & B11;
+          int suffix = (extra << 8) | messageBuffer[3];
 
-      bool isActive = lastThreeBytes[1] & B1 > 0;
-      int offsetPrefix = lastThreeBytes[2] >> 2;
-      int prefix = offsetPrefix + 100;
-      int extra = lastThreeBytes[2] & B11;
-      int suffix = (extra << 8) | lastThreeBytes[3];
-      
-      int8_t frequency[6] = {0, 0, 0, 0, 0, 0};
-      frequency[5] = prefix / 100;
-      frequency[4] = prefix % 100 / 10;
-      frequency[3] = prefix % 10;
-      frequency[2] = suffix / 100;
-      frequency[1] = suffix % 100 / 10;
-      frequency[0] = suffix % 10;
+          int8_t frequency[6] = {0, 0, 0, 0, 0, 0};
+          frequency[5] = prefix / 100;
+          frequency[4] = prefix % 100 / 10;
+          frequency[3] = prefix % 10;
+          frequency[2] = suffix / 100;
+          frequency[1] = suffix % 100 / 10;
+          frequency[0] = suffix % 10;
 
-      if (isActive) {
-        active.display(frequency, ListDispPoint);
-      }
-      else {
-        standby.display(frequency, ListDispPoint);
+          if (cmd == 1) {
+            memcpy(activeFreq, frequency, sizeof(frequency[0])*6);
+            if(powered) {
+              active.display(activeFreq, ListDispPoint);
+            }
+          }
+          else {
+            memcpy(standbyFreq, frequency, sizeof(frequency[0])*6);
+            if(powered) {
+              standby.display(standbyFreq, ListDispPoint);
+            }
+          }
+          break;
+        }
+        case 2:
+        {
+          int brightness = messageBuffer[2];
+          if (brightness >= 0 && brightness <= 7) {
+            active.set(brightness);
+            standby.set(brightness);
+            if (powered) {
+              active.display(activeFreq, ListDispPoint);
+              standby.display(standbyFreq, ListDispPoint);
+            }
+          }
+          break;
+        }
+        case 3:
+        {
+          int received_power = messageBuffer[2];
+          powered = received_power == 1;
+          if (powered) {
+            active.display(activeFreq, ListDispPoint);
+            standby.display(standbyFreq, ListDispPoint);
+          }
+          else {
+            active.clearDisplay();
+            standby.clearDisplay();
+          }
+          break;
+        }
       }
 
       handled = true;
