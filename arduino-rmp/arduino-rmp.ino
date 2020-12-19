@@ -129,9 +129,17 @@ void interruptInnerB() {
   inner.interruptB();
 }
 
+unsigned long lastPress = 0;
+
 void interruptSwap() {
   delay(1);
   if(digitalRead(SWAP_PIN)) {
+    if(lastPress > millis() - 10) {
+      // debounce
+      return;
+    }
+
+    lastPress = millis();
     Serial.write("cmd=Swap\n");
   }
 }
