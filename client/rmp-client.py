@@ -119,70 +119,74 @@ def run(serial_port, scale_brightness, host, port, xp_host, xp_port):
 	lastStandby = None
 	lastBrightness = None
 	lastPower = None
-	while True:
-		if ser.in_waiting > 0:
-			line = ser.readline().decode('utf-8').rstrip()
-			if line == "reset":
-				lastActive = None
-				lastStandby = None
-				lastBrightness = None
-				lastPower = None
-			elif line == "cmd=OuterUp":
-				XPUDP.pyXPUDPServer.sendXPCmd(TOLISS_RMP1_FREQ_UP_LARGE)
-			elif line == "cmd=OuterDown":
-				XPUDP.pyXPUDPServer.sendXPCmd(TOLISS_RMP1_FREQ_DOWN_LARGE)
-			elif line == "cmd=InnerUp":
-				XPUDP.pyXPUDPServer.sendXPCmd(TOLISS_RMP1_FREQ_UP_SMALL)
-			elif line == "cmd=InnerDown":
-				XPUDP.pyXPUDPServer.sendXPCmd(TOLISS_RMP1_FREQ_DOWN_SMALL)
-			elif line == "cmd=Swap":
-				XPUDP.pyXPUDPServer.sendXPCmd(TOLISS_RMP1_SWAP)
-			else:
-				print(f"Unrecognized line {line}")
-		try:
-			flush = False
-			switch = XPUDP.pyXPUDPServer.getData(DREF_ANNUNCIATOR_TEST)
-			testing = switch == 2
-			readBrightness = XPUDP.pyXPUDPServer.getData(DREF_PANEL_BRIGHTNESS)
-			brightness = int(readBrightness * scale_brightness)
-			active = None
-			standby = None
-			read_power = XPUDP.pyXPUDPServer.getData(DREF_RMP1_SWITCH)
-			power = read_power == 1
+	try:
+		while True:
+			if ser.in_waiting > 0:
+				line = ser.readline().decode('utf-8').rstrip()
+				if line == "reset":
+					lastActive = None
+					lastStandby = None
+					lastBrightness = None
+					lastPower = None
+				elif line == "cmd=OuterUp":
+					XPUDP.pyXPUDPServer.sendXPCmd(TOLISS_RMP1_FREQ_UP_LARGE)
+				elif line == "cmd=OuterDown":
+					XPUDP.pyXPUDPServer.sendXPCmd(TOLISS_RMP1_FREQ_DOWN_LARGE)
+				elif line == "cmd=InnerUp":
+					XPUDP.pyXPUDPServer.sendXPCmd(TOLISS_RMP1_FREQ_UP_SMALL)
+				elif line == "cmd=InnerDown":
+					XPUDP.pyXPUDPServer.sendXPCmd(TOLISS_RMP1_FREQ_DOWN_SMALL)
+				elif line == "cmd=Swap":
+					XPUDP.pyXPUDPServer.sendXPCmd(TOLISS_RMP1_SWAP)
+				else:
+					print(f"Unrecognized line {line}")
+			try:
+				flush = False
+				switch = XPUDP.pyXPUDPServer.getData(DREF_ANNUNCIATOR_TEST)
+				testing = switch == 2
+				readBrightness = XPUDP.pyXPUDPServer.getData(DREF_PANEL_BRIGHTNESS)
+				brightness = int(readBrightness * scale_brightness)
+				active = None
+				standby = None
+				read_power = XPUDP.pyXPUDPServer.getData(DREF_RMP1_SWITCH)
+				power = read_power == 1
 
-			if not testing:
-				com1_freq = XPUDP.pyXPUDPServer.getData(DREF_COM1_FREQ)
-				com1_stby_freq = XPUDP.pyXPUDPServer.getData(DREF_COM1_STBY_FREQ)
-				if com1_freq != 0:
-					active = Frequency.from_digits(com1_freq)
-				if com1_stby_freq != 0:
-					standby = Frequency.from_digits(com1_stby_freq)
-			else:
-				active = Frequency.from_digits(888888)
-				standby = Frequency.from_digits(888888)
-			if active is not None and (lastActive is None or active != lastActive):
-				encoded = active.encode()
-				ser.write(b"\xff" + CMD_SET_ACTIVE_FREQ + encoded)
-				lastActive = active
-				flush = True
-			if standby is not None and (lastStandby is None or standby != lastStandby):
-				encoded = standby.encode()
-				ser.write(b"\xff" + CMD_SET_STANDBY_FREQ + encoded)
-				lastStandby = standby
-				flush = True
-			if brightness is not None and (lastBrightness is None or brightness != lastBrightness):
-				ser.write(b"\xff" + CMD_SET_BRIGHTNESS + bytes([brightness]) + b"\x00")
-				lastBrightness = brightness
-				flush = True
-			if power is not None and (lastPower is None or power != lastPower):
-				ser.write(b"\xff" + CMD_SET_POWER + bytes([1 if power else 0]) + b"\x00")
-				lastPower = power
-				flush = True
-			if flush:
-				ser.flush()
-		except Exception as e:
-			print(e)
-			pass
+				if not testing:
+					com1_freq = XPUDP.pyXPUDPServer.getData(DREF_COM1_FREQ)
+					com1_stby_freq = XPUDP.pyXPUDPServer.getData(DREF_COM1_STBY_FREQ)
+					if com1_freq != 0:
+						active = Frequency.from_digits(com1_freq)
+					if com1_stby_freq != 0:
+						standby = Frequency.from_digits(com1_stby_freq)
+				else:
+					active = Frequency.from_digits(888888)
+					standby = Frequency.from_digits(888888)
+				if active is not None and (lastActive is None or active != lastActive):
+					encoded = active.encode()
+					ser.write(b"\xff" + CMD_SET_ACTIVE_FREQ + encoded)
+					lastActive = active
+					flush = True
+				if standby is not None and (lastStandby is None or standby != lastStandby):
+					encoded = standby.encode()
+					ser.write(b"\xff" + CMD_SET_STANDBY_FREQ + encoded)
+					lastStandby = standby
+					flush = True
+				if brightness is not None and (lastBrightness is None or brightness != lastBrightness):
+					ser.write(b"\xff" + CMD_SET_BRIGHTNESS + bytes([brightness]) + b"\x00")
+					lastBrightness = brightness
+					flush = True
+				if power is not None and (lastPower is None or power != lastPower):
+					ser.write(b"\xff" + CMD_SET_POWER + bytes([1 if power else 0]) + b"\x00")
+					lastPower = power
+					flush = True
+				if flush:
+					ser.flush()
+			except Exception as e:
+				print(e)
+				pass
+	finally:
+		ser.close()
+		XPUDP.pyXPUDPServer.quit()
 
 
 if __name__ == "__main__":
