@@ -1,7 +1,5 @@
 #!/usr/bin/env python3
 
-import sys
-
 import click
 import pyxpudpserver as XPUDP
 import serial
@@ -128,6 +126,7 @@ def run(serial_port, scale_brightness, host, port, xp_host, xp_port):
 				lastActive = None
 				lastStandby = None
 				lastBrightness = None
+				lastPower = None
 			elif line == "cmd=OuterUp":
 				XPUDP.pyXPUDPServer.sendXPCmd(TOLISS_RMP1_FREQ_UP_LARGE)
 			elif line == "cmd=OuterDown":
