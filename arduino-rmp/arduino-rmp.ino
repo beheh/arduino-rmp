@@ -129,18 +129,18 @@ void interruptInnerB() {
   inner.interruptB();
 }
 
-unsigned long lastPress = 0;
+unsigned long swapHi = 0;
+unsigned long swapLo = 0;
 
 void interruptSwap() {
-  delay(1);
-  if(digitalRead(SWAP_PIN)) {
-    if(lastPress > millis() - 10) {
-      // debounce
-      return;
-    }
-
-    lastPress = millis();
-    Serial.write("cmd=Swap\n");
+  // check if ON or off
+  if(!digitalRead(SWAP_PIN)) {
+    // schedule check
+    swapHi = millis();
+  }
+  else {
+    swapHi = 0;
+    swapLo = millis();
   }
 }
 
@@ -184,6 +184,19 @@ void setup()
 
 void loop()
 {
+  // check events
+  if (swapHi != 0) {
+    long age = millis() - swapHi;
+    long howLongLo = millis() - swapLo;
+    if (age > 25) { // needs to pressed for at least 50 millis
+      if (howLongLo > 100) { // 100ms quiescence period
+        Serial.write("cmd=Swap\n");
+      }
+      swapHi = 0;
+    }
+  }
+
+  // read from serial
   int numBytes = Serial.available();
   for (int n = 0; n < numBytes; n++) {
     handled = false;
